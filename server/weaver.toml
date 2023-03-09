@@ -1,0 +1,5 @@
+[serviceweaver]
+binary = "./bin/soom"
+
+["github.com/startdusk/soom/chatservice/Service"]
+db_uri = "postgresql://postgres:password@localhost:5432/soom?sslmode=disable"
