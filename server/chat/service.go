@@ -1,4 +1,4 @@
-package chatservice
+package chat
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ServiceWeaver/weaver"
+	"github.com/startdusk/soom/chat/dao"
 
 	_ "github.com/lib/pq"
 )
@@ -31,17 +32,17 @@ type chatService struct {
 	weaver.Implements[Service]
 	weaver.WithConfig[config]
 
-	db *sql.DB
+	postgres *dao.Postgres
 }
 
 func (s *chatService) Init(ctx context.Context) error {
 	cfg := s.Config()
 
-	var err error
-	s.db, err = sql.Open("postgres", cfg.DBURI)
+	db, err := sql.Open("postgres", cfg.DBURI)
 	if err != nil {
 		return fmt.Errorf("error opening database %s: %w", cfg.DBURI, err)
 	}
+	s.postgres = dao.NewPostgres(db)
 
 	return nil
 }
@@ -49,12 +50,15 @@ func (s *chatService) Init(ctx context.Context) error {
 func (s *chatService) CreateChat(context.Context, string) (Chat, error) {
 	panic("implement me")
 }
+
 func (s *chatService) GetChat(context.Context, string) (Chat, error) {
 	panic("implement me")
 }
+
 func (s *chatService) ListChat(context.Context) ([]Chat, error) {
 	panic("implement me")
 }
+
 func (s *chatService) DeleteChat(context.Context, string) error {
 	panic("implement me")
 }

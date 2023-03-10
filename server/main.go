@@ -2,62 +2,61 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/ServiceWeaver/weaver"
-	"github.com/startdusk/soom/chatservice"
+	"github.com/startdusk/soom/chat"
 )
 
 func main() {
-	ctx := context.Background()
+	// Create context that listens for the interrupt signal from the OS.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	root := weaver.Init(ctx)
 
-	chatService, err := weaver.Get[chatservice.Service](root)
+	chatService, err := weaver.Get[chat.Service](root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
-	r := http.NewServeMux()
-	r.HandleFunc("/chat/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, fmt.Sprintf("Method %q not allowed", r.Method), http.StatusMethodNotAllowed)
-			return
-		}
-
-		name := r.URL.Query().Get("name")
-		if len(name) == 0 {
-			http.Error(w, "name is not defined in the url", http.StatusBadRequest)
-			return
-		}
-
-		chat, err := chatService.GetChat(r.Context(), name)
-		if err != nil {
-			fmt.Printf("GetByPost: %s", err.Error())
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		err = json.NewEncoder(w).Encode(chat)
-		if err != nil {
-			fmt.Printf("Encode: %s", err.Error())
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-	})
-
-	lis, err := root.Listener("main", weaver.ListenerOptions{LocalAddress: ":18990"})
-	if err != nil {
-		fmt.Printf("root.Listener: %s", err.Error())
-		return
+	service := Service{
+		ChatService: chatService,
 	}
 
-	err = http.Serve(lis, r)
-	if err != nil {
-		fmt.Printf("http.Serve: %s", err.Error())
-		return
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: service.Routes(),
 	}
+	// Initializing the server in a goroutine so that
+	// it won't block the graceful shutdown handling below
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	// Listen for the interrupt signal.
+	<-ctx.Done()
+
+	// Restore default behavior on the interrupt signal and notify user of shutdown.
+	stop()
+	log.Println("shutting down gracefully, press Ctrl+C again to force")
+
+	// The context is used to inform the server it has 5 seconds to finish
+	// the request it is currently handling
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown: ", err)
+	}
+
+	log.Println("Server exiting")
 }
